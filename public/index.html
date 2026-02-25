@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>IMSLP Audio Similarity</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="container">
+      <h1>IMSLP Audio Similarity</h1>
+      <p>
+        Load an IMSLP recording first, then record from your microphone. Similarity analysis updates live while
+        you are recording.
+      </p>
+
+      <section class="panel">
+        <h2>1) Choose IMSLP Recording</h2>
+        <label for="imslpUrl">IMSLP recording URL</label>
+        <input id="imslpUrl" type="url" placeholder="https://imslp.org/.../recording.mp3" />
+        <button id="loadImslpUrl">Load from URL</button>
+
+        <div class="separator">or</div>
+
+        <label for="imslpFile">Select downloaded IMSLP audio file</label>
+        <input id="imslpFile" type="file" accept="audio/*" />
+
+        <p id="imslpStatus">IMSLP source: none loaded</p>
+        <audio id="imslpPlayback" controls></audio>
+      </section>
+
+      <section class="panel">
+        <h2>2) Record Microphone Audio (Live Analysis)</h2>
+        <div class="row">
+          <button id="startRecording">Start Recording + Live Analysis</button>
+          <button id="stopRecording" disabled>Stop Recording</button>
+        </div>
+        <p id="micStatus">Microphone status: idle</p>
+        <audio id="micPlayback" controls></audio>
+      </section>
+
+      <section class="panel">
+        <h2>3) Live Similarity Output</h2>
+        <pre id="result">No live comparison yet. Load IMSLP audio, then start recording.</pre>
+      </section>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
