@@ -1,0 +1,10 @@
+{
+  "name": "audio-similarity-2",
+  "version": "1.0.0",
+  "description": "Web app for comparing microphone input against IMSLP recordings",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  }
+}
