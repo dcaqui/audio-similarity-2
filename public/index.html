@@ -10,12 +10,22 @@
     <main class="container">
       <h1>IMSLP Audio Similarity</h1>
       <p>
-        Load an IMSLP recording first, then record from your microphone. Similarity analysis updates live while
-        you are recording.
+        Record from your microphone, then compare the captured audio against any IMSLP recording by URL
+        (or by selecting a downloaded file).
       </p>
 
       <section class="panel">
-        <h2>1) Choose IMSLP Recording</h2>
+        <h2>1) Record Microphone Audio</h2>
+        <div class="row">
+          <button id="startRecording">Start Recording</button>
+          <button id="stopRecording" disabled>Stop Recording</button>
+        </div>
+        <p id="micStatus">Microphone status: idle</p>
+        <audio id="micPlayback" controls></audio>
+      </section>
+
+      <section class="panel">
+        <h2>2) Choose IMSLP Recording</h2>
         <label for="imslpUrl">IMSLP recording URL</label>
         <input id="imslpUrl" type="url" placeholder="https://imslp.org/.../recording.mp3" />
         <button id="loadImslpUrl">Load from URL</button>
@@ -30,18 +40,9 @@
       </section>
 
       <section class="panel">
-        <h2>2) Record Microphone Audio (Live Analysis)</h2>
-        <div class="row">
-          <button id="startRecording">Start Recording + Live Analysis</button>
-          <button id="stopRecording" disabled>Stop Recording</button>
-        </div>
-        <p id="micStatus">Microphone status: idle</p>
-        <audio id="micPlayback" controls></audio>
-      </section>
-
-      <section class="panel">
-        <h2>3) Live Similarity Output</h2>
-        <pre id="result">No live comparison yet. Load IMSLP audio, then start recording.</pre>
+        <h2>3) Analyze Similarity</h2>
+        <button id="compareButton">Compare Audio</button>
+        <pre id="result">No comparison yet.</pre>
       </section>
     </main>
 

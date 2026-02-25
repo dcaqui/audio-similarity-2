@@ -1,5 +1,6 @@
 const startBtn = document.getElementById('startRecording');
 const stopBtn = document.getElementById('stopRecording');
+const compareBtn = document.getElementById('compareButton');
 const loadImslpUrlBtn = document.getElementById('loadImslpUrl');
 
 const micStatus = document.getElementById('micStatus');
@@ -10,56 +11,31 @@ const imslpFileInput = document.getElementById('imslpFile');
 const micPlayback = document.getElementById('micPlayback');
 const imslpPlayback = document.getElementById('imslpPlayback');
 
-const LIVE_INTERVAL_MS = 100;
-const TARGET_SAMPLE_RATE = 16000;
-
 let mediaRecorder;
 let chunks = [];
 let micBlob = null;
 let imslpBlob = null;
-let referenceAnalysis = null;
-
-let activeStream = null;
-let micAudioContext = null;
-let micAnalyser = null;
-let analysisTimer = null;
-let micLiveEnvelope = [];
 
 startBtn.addEventListener('click', async () => {
-  if (!referenceAnalysis) {
-    resultEl.textContent =
-      'Load an IMSLP reference recording first. Live analysis needs a target audio to compare against.';
-    return;
-  }
-
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    activeStream = stream;
     chunks = [];
-    micLiveEnvelope = [];
-
     mediaRecorder = new MediaRecorder(stream);
+
     mediaRecorder.ondataavailable = (event) => {
       if (event.data.size > 0) chunks.push(event.data);
     };
 
     mediaRecorder.onstop = () => {
       micBlob = new Blob(chunks, { type: mediaRecorder.mimeType || 'audio/webm' });
-      micPlayback.src = URL.createObjectURL(micBlob);
+      const url = URL.createObjectURL(micBlob);
+      micPlayback.src = url;
       micStatus.textContent = `Microphone status: captured ${Math.round(micBlob.size / 1024)} KB`;
+      stream.getTracks().forEach((track) => track.stop());
     };
 
-    micAudioContext = new AudioContext();
-    const source = micAudioContext.createMediaStreamSource(stream);
-    micAnalyser = micAudioContext.createAnalyser();
-    micAnalyser.fftSize = 2048;
-    source.connect(micAnalyser);
-
-    analysisTimer = setInterval(runLiveAnalysisTick, LIVE_INTERVAL_MS);
-
-    mediaRecorder.start(250);
-    micStatus.textContent = 'Microphone status: recording + live analysis...';
-    resultEl.textContent = 'Live comparison running...';
+    mediaRecorder.start();
+    micStatus.textContent = 'Microphone status: recording...';
     startBtn.disabled = true;
     stopBtn.disabled = false;
   } catch (error) {
@@ -67,31 +43,12 @@ startBtn.addEventListener('click', async () => {
   }
 });
 
-stopBtn.addEventListener('click', async () => {
-  if (analysisTimer) {
-    clearInterval(analysisTimer);
-    analysisTimer = null;
-  }
-
+stopBtn.addEventListener('click', () => {
   if (mediaRecorder && mediaRecorder.state !== 'inactive') {
     mediaRecorder.stop();
   }
-
-  if (activeStream) {
-    activeStream.getTracks().forEach((track) => track.stop());
-    activeStream = null;
-  }
-
-  if (micAudioContext) {
-    await micAudioContext.close();
-    micAudioContext = null;
-    micAnalyser = null;
-  }
-
   startBtn.disabled = false;
   stopBtn.disabled = true;
-
-  resultEl.textContent += '\n\nRecording stopped. Final live metrics shown above.';
 });
 
 loadImslpUrlBtn.addEventListener('click', async () => {
@@ -114,86 +71,66 @@ loadImslpUrlBtn.addEventListener('click', async () => {
     imslpBlob = await response.blob();
     imslpBlob = new Blob([imslpBlob], { type });
     imslpPlayback.src = URL.createObjectURL(imslpBlob);
-
-    await prepareReferenceAnalysis(imslpBlob);
-
-    imslpStatus.textContent =
-      `IMSLP source: loaded from URL (${Math.round(imslpBlob.size / 1024)} KB), ` +
-      `reference envelope frames: ${referenceAnalysis.envelope.length}`;
-    resultEl.textContent = 'Reference loaded. Start recording to see live similarity updates.';
+    imslpStatus.textContent = `IMSLP source: loaded from URL (${Math.round(imslpBlob.size / 1024)} KB)`;
   } catch (error) {
     imslpStatus.textContent = `IMSLP source error: ${error.message}`;
   }
 });
 
-imslpFileInput.addEventListener('change', async () => {
+imslpFileInput.addEventListener('change', () => {
   const [file] = imslpFileInput.files;
   if (!file) return;
 
-  try {
-    imslpBlob = file;
-    imslpPlayback.src = URL.createObjectURL(file);
-
-    await prepareReferenceAnalysis(file);
-
-    imslpStatus.textContent =
-      `IMSLP source: local file ${file.name} (${Math.round(file.size / 1024)} KB), ` +
-      `reference envelope frames: ${referenceAnalysis.envelope.length}`;
-    resultEl.textContent = 'Reference loaded. Start recording to see live similarity updates.';
-  } catch (error) {
-    imslpStatus.textContent = `IMSLP source error: ${error.message}`;
-  }
+  imslpBlob = file;
+  imslpPlayback.src = URL.createObjectURL(file);
+  imslpStatus.textContent = `IMSLP source: local file ${file.name} (${Math.round(file.size / 1024)} KB)`;
 });
 
-function runLiveAnalysisTick() {
-  if (!micAnalyser || !referenceAnalysis) return;
-
-  const frame = new Float32Array(micAnalyser.fftSize);
-  micAnalyser.getFloatTimeDomainData(frame);
-
-  let sum = 0;
-  for (let i = 0; i < frame.length; i += 1) {
-    sum += frame[i] * frame[i];
+compareBtn.addEventListener('click', async () => {
+  if (!micBlob) {
+    resultEl.textContent = 'Please record microphone audio first.';
+    return;
   }
-  const rms = Math.sqrt(sum / frame.length);
-  micLiveEnvelope.push(rms);
 
-  const durationSimilarity = compareDurationsBySeconds(
-    micLiveEnvelope.length * (LIVE_INTERVAL_MS / 1000),
-    referenceAnalysis.durationSec
-  );
-  const envelopeSimilarity = cosineSimilarity(micLiveEnvelope, referenceAnalysis.envelope);
-  const onsetSimilarity = maxNormalizedCrossCorrelation(micLiveEnvelope, referenceAnalysis.envelope, 8);
+  if (!imslpBlob) {
+    resultEl.textContent = 'Please load an IMSLP recording first (URL or file).';
+    return;
+  }
 
-  const combinedScore = Math.max(
-    0,
-    Math.min(1, durationSimilarity * 0.2 + envelopeSimilarity * 0.5 + onsetSimilarity * 0.3)
-  );
+  resultEl.textContent = 'Comparing...';
 
-  resultEl.textContent = [
-    'LIVE ANALYSIS (updates during recording)',
-    `Frames analyzed: ${micLiveEnvelope.length}`,
-    `Live similarity score: ${(combinedScore * 100).toFixed(2)}%`,
-    `Duration similarity: ${(durationSimilarity * 100).toFixed(2)}%`,
-    `Energy-envelope similarity: ${(envelopeSimilarity * 100).toFixed(2)}%`,
-    `Onset alignment similarity: ${(onsetSimilarity * 100).toFixed(2)}%`,
-    '',
-    'Notes:',
-    '- This live score compares the running microphone envelope against the selected IMSLP envelope.',
-    '- Scores can fluctuate while you are still recording and stabilize as more audio arrives.'
-  ].join('\n');
-}
+  try {
+    const [micPcm, imslpPcm] = await Promise.all([blobToPCM(micBlob), blobToPCM(imslpBlob)]);
 
-async function prepareReferenceAnalysis(blob) {
-  const decoded = await blobToPCM(blob);
-  const normalized = normalizeAndResample(decoded, TARGET_SAMPLE_RATE);
-  const envelope = buildEnvelopeByInterval(normalized, TARGET_SAMPLE_RATE, LIVE_INTERVAL_MS);
+    const alignedMic = normalizeAndResample(micPcm, 16000);
+    const alignedImslp = normalizeAndResample(imslpPcm, 16000);
 
-  referenceAnalysis = {
-    envelope,
-    durationSec: normalized.length / TARGET_SAMPLE_RATE
-  };
-}
+    const envelopeMic = buildEnergyEnvelope(alignedMic, 1024, 512);
+    const envelopeImslp = buildEnergyEnvelope(alignedImslp, 1024, 512);
+
+    const durationSimilarity = compareDurations(alignedMic.length, alignedImslp.length, 16000);
+    const envelopeSimilarity = cosineSimilarity(envelopeMic, envelopeImslp);
+    const onsetSimilarity = maxNormalizedCrossCorrelation(envelopeMic, envelopeImslp, 50);
+
+    const combinedScore = Math.max(
+      0,
+      Math.min(1, durationSimilarity * 0.2 + envelopeSimilarity * 0.5 + onsetSimilarity * 0.3)
+    );
+
+    resultEl.textContent = [
+      `Similarity score: ${(combinedScore * 100).toFixed(2)}%`,
+      `Duration similarity: ${(durationSimilarity * 100).toFixed(2)}%`,
+      `Energy-envelope similarity: ${(envelopeSimilarity * 100).toFixed(2)}%`,
+      `Onset alignment similarity: ${(onsetSimilarity * 100).toFixed(2)}%`,
+      '',
+      'Notes:',
+      '- This is a lightweight browser-side similarity metric using energy envelopes and alignment.',
+      '- For high-precision music matching, replace this with MFCC/chroma + DTW on a backend pipeline.'
+    ].join('\n');
+  } catch (error) {
+    resultEl.textContent = `Comparison failed: ${error.message}`;
+  }
+});
 
 async function blobToPCM(blob) {
   const arrayBuffer = await blob.arrayBuffer();
@@ -231,28 +168,27 @@ function normalizeAndResample(audio, targetRate) {
   return out;
 }
 
-function buildEnvelopeByInterval(samples, sampleRate, intervalMs) {
-  const chunkSize = Math.max(1, Math.floor((sampleRate * intervalMs) / 1000));
-  const frameCount = Math.max(1, Math.floor(samples.length / chunkSize));
+function buildEnergyEnvelope(samples, windowSize, hopSize) {
+  if (samples.length < windowSize) return new Float32Array([0]);
+  const frameCount = Math.floor((samples.length - windowSize) / hopSize) + 1;
   const envelope = new Float32Array(frameCount);
 
   for (let frame = 0; frame < frameCount; frame += 1) {
-    const start = frame * chunkSize;
-    const end = Math.min(samples.length, start + chunkSize);
-
+    const start = frame * hopSize;
     let sum = 0;
-    for (let i = start; i < end; i += 1) {
-      sum += samples[i] * samples[i];
+    for (let i = 0; i < windowSize; i += 1) {
+      const x = samples[start + i];
+      sum += x * x;
     }
-
-    const len = Math.max(1, end - start);
-    envelope[frame] = Math.sqrt(sum / len);
+    envelope[frame] = Math.sqrt(sum / windowSize);
   }
 
   return envelope;
 }
 
-function compareDurationsBySeconds(secA, secB) {
+function compareDurations(lenA, lenB, sampleRate) {
+  const secA = lenA / sampleRate;
+  const secB = lenB / sampleRate;
   const maxSec = Math.max(secA, secB);
   if (maxSec < 0.001) return 0;
   return 1 - Math.abs(secA - secB) / maxSec;
